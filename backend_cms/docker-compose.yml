@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: vcf_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    environment:
+      MONGO_INITDB_DATABASE: vcf_dev
+    networks:
+      - vcf_network
+
+  backend-cms:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: vcf_backend_cms
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "35729:35729"
+    depends_on:
+      - mongodb
+    environment:
+      SPRING_APPLICATION_NAME: version-control-framework
+      SERVER_PORT: 8080
+      MONGODB_URI: mongodb://mongodb:27017/
+      MONGODB_CMS_DATABASE: vcf_dev
+      SPRING_DEVTOOLS_RESTART_ENABLED: "true"
+      SPRING_DEVTOOLS_LIVERELOAD_ENABLED: "true"
+    networks:
+      - vcf_network
+    volumes:
+      - .:/app
+      - maven_cache:/root/.m2
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+  maven_cache:
+
+networks:
+  vcf_network:
+    driver: bridge
