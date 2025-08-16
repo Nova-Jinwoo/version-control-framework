@@ -8,6 +8,11 @@ public class HealthController {
     
     @GetMapping("/ping")
     public String ping() {
-        return "pong";
+      return "pong";
     }
+
+    // @GetMapping("/pong")
+    // public String pong() {
+    //   return "ping";
+    // }
 }
