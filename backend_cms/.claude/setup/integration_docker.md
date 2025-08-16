@@ -8,39 +8,42 @@ This document outlines the steps to containerize the Spring Boot backend_cms app
 ### Step 1: Create Dockerfile.local
 **File:** `backend_cms/Dockerfile.local`
 
-Purpose: Multi-stage build for local development with hot reload support
+Purpose: Development container with Spring Boot DevTools hot reload enabled
 
 ```dockerfile
-# Build stage
-FROM maven:3.9-eclipse-temurin-17 AS build
-WORKDIR /app
-COPY pom.xml .
-COPY mvnw .
-COPY .mvn .mvn
-RUN ./mvnw dependency:go-offline
-COPY src src
-RUN ./mvnw clean package -DskipTests
-
-# Runtime stage
-FROM eclipse-temurin:17-jre-alpine
-WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
-```
-
-Alternative for development with live reload:
-```dockerfile
+# Development Dockerfile with hot reload support
 FROM maven:3.9-eclipse-temurin-17
 WORKDIR /app
-COPY pom.xml .
+
+# Copy Maven wrapper and pom.xml
 COPY mvnw .
 COPY .mvn .mvn
+COPY pom.xml .
+
+# Download dependencies (cached layer)
 RUN ./mvnw dependency:go-offline
+
+# Copy source code
 COPY src src
+
+# Expose port
 EXPOSE 8080
-CMD ["./mvnw", "spring-boot:run"]
+
+# Enable DevTools for hot reload
+ENV SPRING_DEVTOOLS_RESTART_ENABLED=true
+ENV SPRING_DEVTOOLS_LIVERELOAD_ENABLED=true
+
+# Run with spring-boot:run which activates DevTools from pom.xml
+CMD ["./mvnw", "spring-boot:run", "-Dspring-boot.run.fork=false"]
 ```
+
+**Note:** The `-Dspring-boot.run.fork=false` ensures DevTools works properly in Docker container.
+
+**How hot reload works with this setup:**
+1. DevTools is included in pom.xml with `runtime` scope
+2. When using `spring-boot:run`, DevTools is automatically activated
+3. Volume mounts in docker-compose.yml allow file changes to be detected
+4. DevTools monitors classpath and triggers automatic restart on changes
 
 ### Step 2: Create docker-compose.yml
 **File:** `backend_cms/docker-compose.yml`
@@ -73,6 +76,7 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+      - "35729:35729"  # LiveReload port for browser auto-refresh
     depends_on:
       - mongodb
     environment:
@@ -80,10 +84,13 @@ services:
       SERVER_PORT: 8080
       MONGODB_URI: mongodb://mongodb:27017/
       MONGODB_CMS_DATABASE: vcf_dev
+      # DevTools settings for hot reload
+      SPRING_DEVTOOLS_RESTART_ENABLED: "true"
+      SPRING_DEVTOOLS_LIVERELOAD_ENABLED: "true"
     networks:
       - vcf_network
     volumes:
-      # For hot reload during development (optional)
+      # REQUIRED for hot reload - maps local source to container
       - ./src:/app/src
       - ./pom.xml:/app/pom.xml
       - maven_cache:/root/.m2
@@ -234,11 +241,19 @@ docker-compose down
 docker-compose down -v
 ```
 
-### Development Workflow
-1. Make code changes locally
-2. If using hot reload, changes apply automatically
-3. Otherwise, rebuild: `docker-compose build backend-cms`
-4. Restart service: `docker-compose restart backend-cms`
+### Development Workflow with Hot Reload
+1. Start services: `docker-compose up -d`
+2. Make code changes locally in your IDE
+3. Save the file
+4. DevTools automatically detects changes and restarts the application
+5. Check logs to confirm restart: `docker-compose logs -f backend-cms`
+6. No manual rebuild or restart needed!
+
+**Hot reload confirmation in logs:**
+```
+[restartedMain] o.s.b.devtools.restart.RestartLauncher : Restarting due to 1 class path change(s)
+[restartedMain] c.e.backend_cms.BackendCmsApplication : Started BackendCmsApplication in X seconds
+```
 
 ### Testing the Setup
 ```bash
